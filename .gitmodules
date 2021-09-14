@@ -1,0 +1,6 @@
+[submodule "external/stalink"]
+	path = external/stalink
+	url = git@github.com:Chopper455/Stalink.git
+[submodule "external/OpenSTA"]
+	path = external/OpenSTA
+	url = git@github.com:Chopper455/OpenSTA.git
