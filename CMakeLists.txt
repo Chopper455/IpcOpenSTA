@@ -27,7 +27,7 @@ endif()
 if(NOT EXISTS "${PROJECT_SOURCE_DIR}/external/OpenSTA/CMakeLists.txt")
 	message(FATAL_ERROR "The OpenSTA submodule wasn't downloaded!")
 endif()
-if(NOT EXISTS "${PROJECT_SOURCE_DIR}/external/stalink/CMakeLists.txt")
+if(NOT EXISTS "${PROJECT_SOURCE_DIR}/external/Stalink/CMakeLists.txt")
 	message(FATAL_ERROR "The Stalink submodule wasn't downloaded!")
 endif()
 
@@ -54,7 +54,7 @@ endif()
 
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/external/OpenSTA)
-add_subdirectory(${PROJECT_SOURCE_DIR}/external/stalink)
+add_subdirectory(${PROJECT_SOURCE_DIR}/external/Stalink)
 
 
 file(GLOB_RECURSE SRC_SOURCES
@@ -66,14 +66,14 @@ INCLUDE_DIRECTORIES(
 	${CMAKE_CURRENT_SOURCE_DIR}/src/
 	${CMAKE_CURRENT_SOURCE_DIR}/external/OpenSTA/include/sta
 	${CMAKE_CURRENT_SOURCE_DIR}/external/OpenSTA/search
-	${CMAKE_CURRENT_SOURCE_DIR}/external/stalink/src/
-	${CMAKE_CURRENT_SOURCE_DIR}/external/stalink/external/yas/include
+	${CMAKE_CURRENT_SOURCE_DIR}/external/Stalink/src/
+	${CMAKE_CURRENT_SOURCE_DIR}/external/Stalink/external/yas/include
 	${TCL_INCLUDE_PATH}
 )
 
 add_executable(${CMAKE_PROJECT_NAME} ${SRC_SOURCES})
 #don't need it if OpenSTA also doesn't have it
-target_link_libraries(${CMAKE_PROJECT_NAME} stalink)
+target_link_libraries(${CMAKE_PROJECT_NAME} Stalink)
 target_link_libraries(${CMAKE_PROJECT_NAME} OpenSTA )
 if (ZLIB_LIBRARIES)
   target_link_libraries(${CMAKE_PROJECT_NAME} ${ZLIB_LIBRARIES})

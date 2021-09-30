@@ -1,10 +1,3 @@
-/*
- * OpenStaServerHandler.hpp
- *
- *  Created on: 2 рту. 2021 у.
- *      Author: zaglyadin.g
- */
-
 #ifndef SRC_OPENSTASERVERHANDLER_HPP_
 #define SRC_OPENSTASERVERHANDLER_HPP_
 

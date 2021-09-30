@@ -1,10 +1,3 @@
-/*
- * OpenStaServerHandler.cpp
- *
- *  Created on: 6 рту. 2021 у.
- *      Author: zaglyadin.g
- */
-
 
 #include "OpenStaServerHandler.hpp"
 

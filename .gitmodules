@@ -1,6 +1,6 @@
-[submodule "external/stalink"]
-	path = external/stalink
-	url = git@github.com:Chopper455/Stalink.git
 [submodule "external/OpenSTA"]
 	path = external/OpenSTA
-	url = git@github.com:Chopper455/OpenSTA.git
+	url = ../OpenSTA.git
+[submodule "external/Stalink"]
+	path = external/Stalink
+	url = ../Stalink.git
