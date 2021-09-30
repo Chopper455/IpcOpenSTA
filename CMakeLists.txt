@@ -73,7 +73,7 @@ INCLUDE_DIRECTORIES(
 
 add_executable(${CMAKE_PROJECT_NAME} ${SRC_SOURCES})
 #don't need it if OpenSTA also doesn't have it
-target_link_libraries(${CMAKE_PROJECT_NAME} Stalink)
+target_link_libraries(${CMAKE_PROJECT_NAME} stalink)
 target_link_libraries(${CMAKE_PROJECT_NAME} OpenSTA )
 if (ZLIB_LIBRARIES)
   target_link_libraries(${CMAKE_PROJECT_NAME} ${ZLIB_LIBRARIES})
