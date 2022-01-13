@@ -594,6 +594,7 @@ bool OpenStaServerHandler::fillGraphNodeAatRat(
      		outNodeData.mMaxWorstSlackAat = aatValue;
      		outNodeData.mMaxWorstSlackRat = ratValue;
      		outNodeData.mHasTiming = true;
+		worstMaxSlack = slack;
      		continue;
      	}
 
@@ -602,6 +603,7 @@ bool OpenStaServerHandler::fillGraphNodeAatRat(
      		outNodeData.mMinWorstSlackAat = aatValue;
      		outNodeData.mMinWorstSlackRat = ratValue;
      		outNodeData.mHasTiming = true;
+		worstMinSlack = slack;
      	}
     }
 
