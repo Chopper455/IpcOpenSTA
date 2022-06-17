@@ -1,6 +1,3 @@
-[submodule "external/OpenSTA"]
-	path = external/OpenSTA
-	url = ../OpenSTA.git
 [submodule "external/Stalink"]
 	path = external/Stalink
 	url = ../Stalink.git
