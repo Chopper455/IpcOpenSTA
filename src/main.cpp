@@ -6,6 +6,7 @@
 #include "server/StaServerIpcProtocol.hpp"
 
 #include <iostream>
+#include <exception>
 
 
 int main(int argc, char** argv) {
@@ -17,14 +18,14 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	std::cout << "Opening channel" << std::endl;
+	std::cout << "Opening STA channel '" << argv[1] << "'" << std::endl;
 	stamask::YasMessageSerdes* serDesPtr =
 			new stamask::YasMessageSerdes();
 	auto channelPtr = new stamask::ShmemSerdesIpcChannel(
 			serDesPtr, argv[1], true);
 
 	if(!channelPtr->connect()) {
-		std::cout << "Failed to open the channel '" << argv[0] << "'" << std::endl;
+		std::cout << "Failed to open the channel '" << argv[1] << "'" << std::endl;
 		delete channelPtr;
 		delete serDesPtr;
 		return 1;
@@ -41,7 +42,6 @@ int main(int argc, char** argv) {
 		std::cout << "handler unknown ex: " << std::endl;
 		return 1;
 	}
-
 
 	std::cout << "Running execution loop" << std::endl;
 	stamask::StaServerIpcProtocol protocol(channelPtr, handlerPtr);

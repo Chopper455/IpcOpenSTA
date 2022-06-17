@@ -17,6 +17,9 @@
 #include "DcalcAnalysisPt.hh"
 #include "TagGroup.hh"
 
+#include "Tag.hh"
+#include "ClkInfo.hh"
+
 #include "Sdc.hh"
 #include "Parasitics.hh"
 
@@ -107,10 +110,20 @@ bool OpenStaServerHandler::execute(
 	if(!checkStaReady())
 		return false;
 
-	sta::LibertyLibrary* libPtr = sta::Sta::sta()->readLiberty(
-			inCommand.mStr.c_str(),
-			sta::Sta::sta()->cmdCorner(),
-			sta::MinMaxAll::all(), true);
+	sta::LibertyLibrary* libPtr = nullptr;
+
+	try {
+		libPtr = sta::Sta::sta()->readLiberty(
+				inCommand.mStr.c_str(),
+				sta::Sta::sta()->cmdCorner(),
+				sta::MinMaxAll::all(), true);
+	} catch (const std::exception& ex) {
+		setExecMessage(ex.what());
+		return false;
+	} catch (...) {
+		setExecMessage("unknown exception");
+		return false;
+	}
 
 	if(!libPtr)
 		setExecMessage("failed to read liberty " + inCommand.mStr);
@@ -138,8 +151,8 @@ bool OpenStaServerHandler::execute(
 		return false;
 
 	sta::Sta *sta = sta::Sta::sta();
-	sta->network()->clear();
 	sta->clear();
+	sta->network()->clear();
 
 	return true;
 }
@@ -166,7 +179,16 @@ bool OpenStaServerHandler::execute(
 		networkReaderPtr->report()->redirectStringBegin();
 
 	sta::Sta::sta()->readNetlistBefore();
-	bool isOk = sta::readVerilogFile(inCommand.mStr.c_str(), networkReaderPtr);
+	bool isOk = true;
+	try {
+		isOk = sta::readVerilogFile(inCommand.mStr.c_str(), networkReaderPtr);
+	} catch (const std::exception& ex) {
+		setExecMessage(ex.what());
+		return false;
+	} catch (...) {
+		setExecMessage("unknown exception");
+		return false;
+	}
 
 	if(networkReaderPtr->report())
 		setExecMessage(networkReaderPtr->report()->redirectStringEnd());
@@ -369,21 +391,25 @@ bool OpenStaServerHandler::collectVertexesData(
 		if(!vertexPtr)
 			continue;
 
+		sta::VertexId vertexId = inGraphPtr->id(vertexPtr);
+
 		//ignoring pinless vertexes
 		pinPtr = vertexPtr->pin();
 		if(!pinPtr)
 			continue;
 
+		sta::ConcretePin* concrPinPtr = (sta::ConcretePin*) pinPtr;
+
 		//mapping vertex ID to index
 		if(vertexPtr->objectIdx() >= outVertexIdToIdxVec.size())
 			outVertexIdToIdxVec.resize(
-					vertexPtr->objectIdx()+1,
+					vertexId+1,
 					std::numeric_limits<uint32_t>::max());
 
-		outVertexIdToIdxVec[vertexPtr->objectIdx()] = outVertexIdToDataVec.size();
+		outVertexIdToIdxVec[vertexId] = outVertexIdToDataVec.size();
 
 		outVertexIdToDataVec.push_back(VertexIdData());
-		outVertexIdToDataVec.back().mVertexId = vertexPtr->objectIdx();
+		outVertexIdToDataVec.back().mVertexId = vertexId;
 		outVertexIdToDataVec.back().mIsDriver =
 				vertexPtr->isDriver(inNetworkPtr) ||
 				vertexPtr->isBidirectDriver();
@@ -417,6 +443,9 @@ bool OpenStaServerHandler::collectEdgesData(
 	sta::Edge* edgePtr = nullptr;
 	sta::Vertex* fromPtr = nullptr;
 	sta::Vertex* toPtr = nullptr;
+	sta::VertexId fromVertexId = 0;
+	sta::VertexId toVertexId = 0;
+
 	uint32_t fromId = 0;
 	uint32_t toId = 0;
 
@@ -452,12 +481,15 @@ bool OpenStaServerHandler::collectEdgesData(
 			if(!fromPtr || !toPtr)
 				continue;
 
-			if(fromPtr->objectIdx() >= inVertexIdToIdxVec.size() ||
-					toPtr->objectIdx() >= inVertexIdToIdxVec.size())
+			fromVertexId = inGraphPtr->id(fromPtr);
+			toVertexId = inGraphPtr->id(toPtr);
+
+			if(fromVertexId >= inVertexIdToIdxVec.size() ||
+					toVertexId >= inVertexIdToIdxVec.size())
 				continue;
 
-			fromId = inVertexIdToIdxVec[fromPtr->objectIdx()];
-			toId = inVertexIdToIdxVec[toPtr->objectIdx()];
+			fromId = inVertexIdToIdxVec[fromVertexId];
+			toId = inVertexIdToIdxVec[toVertexId];
 
 			outEdgeIdToDataVec.push_back(EdgeIdData());
 			//WARNING: do not use edgePtr->objectIdx(),
@@ -516,40 +548,56 @@ bool OpenStaServerHandler::execute(
 		if(!vertexPtr)
 			continue;
 
-		fillGraphNodeAatRat(sta::Sta::sta(), vertexPtr, outNodeTimingsVec[vId]);
+		if(fillGraphNodeAatRat(sta::Sta::sta(), vertexPtr, outNodeTimingsVec[vId]))
+			outNodeTimingsVec[vId].mNodeId = vId;
+
+		if(outNodeTimingsVec[vId].mHasTiming) {
+			bool toSkip = !vertexPtr->hasRequireds() ||
+					vertexPtr->hasChecks() ||
+					vertexPtr->hasDownstreamClkPin() ||
+					vertexPtr->isCheckClk() ||
+					vertexPtr->isConstant() ||
+					vertexPtr->isConstrained() ||
+					vertexPtr->isDisabledConstraint() ||
+					vertexPtr->isGatedClkEnable() ||
+					vertexPtr->isRegClk();
+
+			outNodeTimingsVec[vId].mNonData = toSkip;
+
+		}
 	}
 
-	//get all timing path endpoints, for each endpoint
-	//trace back all incoming nodes with rat+aat to set path endpoint rat
-	sta::VertexSet* endpointSetPtr = sta::Sta::sta()->search()->endpoints();
-	if(!endpointSetPtr) {
-		setExecMessage("failed to get timing endpoints");
-		return false;
-	}
-
-	size_t idx = 0;
-	for(auto vertexIt = endpointSetPtr->begin(),
-			vertexEndIt = endpointSetPtr->end();
-			vertexIt != vertexEndIt; vertexIt++) {
-		if(!*vertexIt)
-			continue;
-
-		//if vertex is an end-check of timing path,
-		//then have to collect all previous vertexes that are affected by this RAT
-		if((!(*vertexIt)->isConstrained() &&
-				!(*vertexIt)->hasChecks()) ||
-				!(*vertexIt)->hasRequireds())
-			continue;
-
-		//separately traversing back paths for min and max constraint
-		fillSetBackpathNodesRat(
-				sta::Sta::sta(), graphPtr, *vertexIt,
-				outNodeTimingsVec, idx, true);
-		fillSetBackpathNodesRat(
-				sta::Sta::sta(), graphPtr, *vertexIt,
-				outNodeTimingsVec, idx, false);
-		idx++;
-	}
+//	//get all timing path endpoints, for each endpoint
+//	//trace back all incoming nodes with rat+aat to set path endpoint rat
+//	sta::VertexSet* endpointSetPtr = sta::Sta::sta()->search()->endpoints();
+//	if(!endpointSetPtr) {
+//		setExecMessage("failed to get timing endpoints");
+//		return false;
+//	}
+//
+//	size_t idx = 0;
+//	for(auto vertexIt = endpointSetPtr->begin(),
+//			vertexEndIt = endpointSetPtr->end();
+//			vertexIt != vertexEndIt; vertexIt++) {
+//		if(!*vertexIt)
+//			continue;
+//
+//		//if vertex is an end-check of timing path,
+//		//then have to collect all previous vertexes that are affected by this RAT
+//		if((!(*vertexIt)->isConstrained() &&
+//				!(*vertexIt)->hasChecks()) ||
+//				!(*vertexIt)->hasRequireds())
+//			continue;
+//
+//		//separately traversing back paths for min and max constraint
+//		fillSetBackpathNodesRat(
+//				sta::Sta::sta(), graphPtr, *vertexIt,
+//				outNodeTimingsVec, idx, true);
+//		fillSetBackpathNodesRat(
+//				sta::Sta::sta(), graphPtr, *vertexIt,
+//				outNodeTimingsVec, idx, false);
+//		idx++;
+//	}
 
 	return true;
 }
@@ -570,12 +618,14 @@ bool OpenStaServerHandler::fillGraphNodeAatRat(
 	if(!inStaPtr || !inVertexPtr)
 		return false;
 
-	outNodeData.mNodeId = inVertexPtr->objectIdx();
+	//outNodeData.mNodeId = inVertexPtr->objectIdx();
 
 	sta::Arrival aatValue = 0;
 	sta::Required ratValue = 0;
 	sta::Slack worstMinSlack = 1e30;
 	sta::Slack worstMaxSlack = 1e30;
+
+	sta::Clock* clkPtr = nullptr;
 
 	//processing all min/max rise/fall timings of the node
 	sta::VertexPathIterator path_iter(inVertexPtr, inStaPtr);
@@ -587,6 +637,7 @@ bool OpenStaServerHandler::fillGraphNodeAatRat(
      	aatValue = path->arrival(inStaPtr);
      	ratValue = path->required(inStaPtr);
      	sta::Slack slack = path->slack(inStaPtr);
+     	clkPtr = path->clock(inStaPtr);
 
      	//for min/max constraints setting aat/rat values if it's slack < current worst
      	if(path->minMax(inStaPtr) == sta::MinMax::max() &&
@@ -594,7 +645,10 @@ bool OpenStaServerHandler::fillGraphNodeAatRat(
      		outNodeData.mMaxWorstSlackAat = aatValue;
      		outNodeData.mMaxWorstSlackRat = ratValue;
      		outNodeData.mHasTiming = true;
-		worstMaxSlack = slack;
+     		if(clkPtr)
+     			outNodeData.mClkIdx = clkPtr->index();
+
+     		worstMaxSlack = slack;
      		continue;
      	}
 
@@ -603,7 +657,10 @@ bool OpenStaServerHandler::fillGraphNodeAatRat(
      		outNodeData.mMinWorstSlackAat = aatValue;
      		outNodeData.mMinWorstSlackRat = ratValue;
      		outNodeData.mHasTiming = true;
-		worstMinSlack = slack;
+     		if(clkPtr)
+     			outNodeData.mClkIdx = clkPtr->index();
+
+     		worstMinSlack = slack;
      	}
     }
 
@@ -632,7 +689,7 @@ bool OpenStaServerHandler::fillSetBackpathNodesRat(
 	if(!inStaPtr || !inGraphPtr || !inVertexPtr)
 		return false;
 
-	sta::VertexId endIdx = inVertexPtr->objectIdx();
+	sta::VertexId endIdx = inGraphPtr->id(inVertexPtr);
 	if(endIdx >= outDataVec.size())
 		return false;
 
@@ -666,7 +723,7 @@ bool OpenStaServerHandler::fillSetBackpathNodesRat(
     	if(!currVertexPtr)
     		continue;
 
-    	currVertexId = currVertexPtr->objectIdx();
+    	currVertexId = inGraphPtr->id(currVertexPtr);
     	if(currVertexId >= outDataVec.size())
     		continue;
 
@@ -694,7 +751,7 @@ bool OpenStaServerHandler::fillSetBackpathNodesRat(
 			if(!fromVertexPtr)
 				continue;
 
-	    	fromVertexId = fromVertexPtr->objectIdx();
+	    	fromVertexId = inGraphPtr->id(fromVertexPtr);
 	    	if(fromVertexId >= outDataVec.size())
 	    		continue;
 
@@ -1000,7 +1057,7 @@ bool OpenStaServerHandler::execute(
 	if(sta::Sta::sta()->report())
 		sta::Sta::sta()->report()->redirectStringBegin();
 
-	sta::Sta::sta()->writeSdf(inCommand.mStr.c_str(), cornerPtr, '/', 3, false, false, false);
+	sta::Sta::sta()->writeSdf(inCommand.mStr.c_str(), cornerPtr, '/', true, 3, false, false, false);
 
 	if(sta::Sta::sta()->report())
 		setExecMessage(sta::Sta::sta()->report()->redirectStringEnd());
@@ -1067,6 +1124,40 @@ bool OpenStaServerHandler::execute(
 	}
 
 	outReportStr = report->redirectStringEnd();
+
+	return true;
+}
+
+/**
+ * Check timing constraints and writes out WNS and TNS stats.
+ * Returns false if design wasn't loaded or there're no path ends.
+ * @param inCommand command to execute
+ * @param outMinWNS worst slack for min condition
+ * @param outMinWNS worst slack for max condition
+ * @param outMinWNS total negative slack for min condition
+ * @param outMinWNS total negative slack for max condition
+ * @success flag
+ */
+bool OpenStaServerHandler::execute(
+						const CommandGetDesignStats& inCommand,
+						float& outMinWNS,
+						float& outMaxWNS,
+						float& outMinTNS,
+						float& outMaxTNS) {
+	setExecMessage("");
+	if(!checkDesignLoaded())
+		return false;
+
+	outMinTNS = sta::Sta::sta()->totalNegativeSlack(sta::MinMax::min());
+	outMaxTNS = sta::Sta::sta()->totalNegativeSlack(sta::MinMax::max());
+
+	sta::Vertex* worstVertexPtr = nullptr;
+	sta::Sta::sta()->worstSlack(
+			sta::MinMax::min(),
+			outMinWNS, worstVertexPtr);
+	sta::Sta::sta()->worstSlack(
+				sta::MinMax::max(),
+				outMaxWNS, worstVertexPtr);
 
 	return true;
 }
@@ -2077,7 +2168,8 @@ sta::Cell* OpenStaServerHandler::createBlockDeclaration(
 
 	//creating the cell itself
 	sta::Cell* cellPtr = inNetworkPtr->makeCell(
-			inLibraryPtr, inBlockData.mName.c_str(), false, "");
+			inLibraryPtr, inBlockData.mName.c_str(),
+			inBlockData.mLeafFlag, "");
 	if(!cellPtr)
 		return nullptr;
 
@@ -2171,6 +2263,7 @@ bool OpenStaServerHandler::createBlockBody(
 		return false;
 	}
 
+
 	//if block is a leaf, then there's nothing to do with internal instances
 	if(inCurrData.mLeafFlag)
 		return true;
@@ -2217,7 +2310,6 @@ bool OpenStaServerHandler::createBlockBody(
 			addExecMessage("failed to create subinstance body: " + instData.mName);
 			instOk = false;
 		}
-
 	}
 
 	return instOk;
@@ -2382,6 +2474,9 @@ bool OpenStaServerHandler::createInstPinConnection(
 	if(!inNetworkPtr || !inCurrMasterCellPtr || !inCurrInstPtr)
 		return false;
 
+	if(inPortName == "QC")
+		int stop = 1;
+
 	//find a port
 	sta::Port* portPtr = inNetworkPtr->findPort(inCurrMasterCellPtr, inPortName.c_str());
 	if(!portPtr) {
@@ -2412,7 +2507,14 @@ bool OpenStaServerHandler::createInstPinConnection(
 		//if block comes from netlist but isn't hierarhical,
 		//then there's no need to pin-connect, because timing isn't important here
 		if(inCurrMasterBlockData.mLeafFlag) {
-			inNetworkPtr->connect(inCurrInstPtr, portPtr, externalNetPtr);
+			sta::Pin *pin = inNetworkPtr->findPin(inCurrInstPtr, portPtr);
+			if(!pin) {
+				pin = inNetworkPtr->makePin(inCurrInstPtr, portPtr, externalNetPtr);
+				if(pin && internalNetPtr)
+					inNetworkPtr->makeTerm(pin, internalNetPtr);
+			} else {
+				inNetworkPtr->connect(inCurrInstPtr, portPtr, externalNetPtr);
+			}
 		} else {
 			//for hierarchical netlist blocks have to pin-connect
 			sta::Pin *pin = inNetworkPtr->makePin(inCurrInstPtr, portPtr, externalNetPtr);
