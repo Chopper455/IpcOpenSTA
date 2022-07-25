@@ -1269,10 +1269,8 @@ bool OpenStaServerHandler::execute(
 
 	//using input edges if they aren't empty
 	//also they must be of correct size
-	if(!inCommand.mEdgeShiftsVec.empty() &&
-			!inCommand.mEdgesVec.empty()) {
-		if(inCommand.mEdgeShiftsVec.size() != inCommand.mEdgesVec.size() ||
-				inCommand.mEdgeShiftsVec.size() != 3) {
+	if(!inCommand.mEdgesVec.empty()) {
+		if(inCommand.mEdgesVec.size() != 3) {
 			addExecMessage("on use edges and shifts must contain 3 entries");
 			allOk = false;
 		}
@@ -1281,10 +1279,17 @@ bool OpenStaServerHandler::execute(
 				inCommand.mEdgesVec.begin(),
 				inCommand.mEdgesVec.end());
 
-		edgeShiftsPtr = new sta::FloatSeq;
-		edgeShiftsPtr->insert(edgeShiftsPtr->end(),
-				inCommand.mEdgeShiftsVec.begin(),
-				inCommand.mEdgeShiftsVec.end());
+		if(!inCommand.mEdgeShiftsVec.empty()) {
+			if(inCommand.mEdgeShiftsVec.size() != inCommand.mEdgesVec.size()) {
+				addExecMessage("on use edges and shifts must contain equal amount of entries");
+				allOk = false;
+			}
+
+			edgeShiftsPtr = new sta::FloatSeq;
+			edgeShiftsPtr->insert(edgeShiftsPtr->end(),
+					inCommand.mEdgeShiftsVec.begin(),
+					inCommand.mEdgeShiftsVec.end());
+		}
 	}
 
 	char* comment = strcpy(
