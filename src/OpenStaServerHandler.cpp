@@ -1292,6 +1292,8 @@ bool OpenStaServerHandler::execute(
 		}
 	}
 
+
+
 	char* comment = strcpy(
 			new char[inCommand.mDescription.length() + 1],
 			inCommand.mDescription.c_str());
@@ -1435,11 +1437,11 @@ bool OpenStaServerHandler::execute(
 	sta::RiseFallBoth* rfPtr = getRiseFallBoth(inCommand.mRise, inCommand.mFall);
 
 	if(inCommand.mSource) {
-		sta::Sta::sta()->setClockLatency(
-				clockPtr, pinPtr, rfPtr, minMaxPtr, inCommand.mValue);
-	} else {
 		sta::Sta::sta()->setClockInsertion(
 				clockPtr, pinPtr, rfPtr, minMaxPtr, earlyLatePtr, inCommand.mValue);
+	} else {
+		sta::Sta::sta()->setClockLatency(
+				clockPtr, pinPtr, rfPtr, minMaxPtr, inCommand.mValue);
 	}
 
 	return true;
@@ -2891,7 +2893,7 @@ sta::ExceptionFrom* OpenStaServerHandler::createPathExceptionFrom(
 	sta::InstanceSet* instsSetPtr = new sta::InstanceSet();
 	findAddObjectsByAddr<sta::Instance, TargetSearchObjType::SearchObjTypeInst>(
 			inNetworkPtr, inTopInstPtr,
-			inCommand.mFromPinPathsVec, instsSetPtr);
+			inCommand.mFromInstPathsVec, instsSetPtr);
 
 	sta::ClockSet* clocksSetPtr = new sta::ClockSet();
 	fillClocksInSet(inSdcPtr, inCommand.mFromClocksVec, clocksSetPtr);
@@ -2983,7 +2985,7 @@ sta::ExceptionTo* OpenStaServerHandler::createPathExceptionTo(
 	sta::InstanceSet* instsSetPtr = new sta::InstanceSet();
 	findAddObjectsByAddr<sta::Instance, TargetSearchObjType::SearchObjTypeInst>(
 			inNetworkPtr, inTopInstPtr,
-			inCommand.mToPinPathsVec, instsSetPtr);
+			inCommand.mToInstPathsVec, instsSetPtr);
 
 	sta::ClockSet* clocksSetPtr = new sta::ClockSet();
 	fillClocksInSet(inSdcPtr, inCommand.mToClocksVec, clocksSetPtr);
@@ -2991,18 +2993,23 @@ sta::ExceptionTo* OpenStaServerHandler::createPathExceptionTo(
 	sta::RiseFallBoth* rfPtr = getRiseFallBoth(
 			inCommand.mToRise, inCommand.mToFall);
 
+	sta::RiseFallBoth* endRfPtr = getRiseFallBoth(
+			inCommand.mRise, inCommand.mFall);
+
 	//if all points are empty, then returning null
-	if(pinsSetPtr->empty() &&
-			instsSetPtr->empty() &&
-			clocksSetPtr->empty()) {
-		delete pinsSetPtr;
-		delete instsSetPtr;
-		delete clocksSetPtr;
-		return nullptr;
+	if(!pinsSetPtr->empty() ||
+			!instsSetPtr->empty() ||
+			!clocksSetPtr->empty() ||
+			rfPtr != sta::RiseFallBoth::riseFall() ||
+			endRfPtr != sta::RiseFallBoth::riseFall()) {
+		return sta::Sta::sta()->makeExceptionTo(
+				pinsSetPtr, clocksSetPtr, instsSetPtr, rfPtr, endRfPtr);
 	}
 
-	return sta::Sta::sta()->makeExceptionTo(
-			pinsSetPtr, clocksSetPtr, instsSetPtr, rfPtr, rfPtr);
+	delete pinsSetPtr;
+	delete instsSetPtr;
+	delete clocksSetPtr;
+	return nullptr;
 }
 
 /**
