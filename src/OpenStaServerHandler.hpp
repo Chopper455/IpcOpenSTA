@@ -118,6 +118,8 @@ public:
 	virtual bool execute(
 			const CommandSetInPortTransition& inCommand);
 	virtual bool execute(
+			const CommandSetPortPinLoad& inCommand);
+	virtual bool execute(
 			const CommandSetFalsePath& inCommand);
 	virtual bool execute(
 			const CommandSetMinMaxDelay& inCommand);

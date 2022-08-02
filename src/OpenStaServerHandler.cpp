@@ -1670,6 +1670,50 @@ bool OpenStaServerHandler::execute(
 
 
 /**
+ * Sets port capacitance load.
+ * Returns false if Sta isn't ready.
+ * Returns false if target port doesn't exist.
+ * Returns false if slew value is negative.
+ * @param inCommand command to execute
+ * @return execution status
+ */
+bool OpenStaServerHandler::execute(
+						const CommandSetPortPinLoad& inCommand) {
+	if(!checkDesignLoaded())
+		return false;
+
+	setExecMessage("");
+	sta::Network* networkPtr = sta::Sta::sta()->cmdNetwork();
+
+	//target port must exist
+	sta::Cell* masterCellPtr = networkPtr->cell(networkPtr->topInstance());
+	if(!masterCellPtr) {
+		setExecMessage("couldn't find top-block");
+		return false;
+	}
+
+	sta::Port* targetPortPtr = networkPtr->findPort(
+			masterCellPtr, inCommand.mTargetPortPin.mObjName.c_str());
+	if(!targetPortPtr) {
+		setExecMessage("couldn't find load port " +
+				inCommand.mTargetPortPin.mObjName);
+		return false;
+	}
+
+	sta::MinMaxAll* minMaxPtr = getMinMaxAll(inCommand.mMin, inCommand.mMax);
+	sta::RiseFallBoth* rfPtr = getRiseFallBoth(inCommand.mRise, inCommand.mFall);
+
+	//slew value must be positive
+	if(inCommand.mCap < 0) {
+		setExecMessage("port load value must be non-negative");
+		return false;
+	}
+
+	sta::Sta::sta()->setPortExtPinCap(targetPortPtr, rfPtr, minMaxPtr, inCommand.mCap);
+	return true;
+}
+
+/**
  * Sets false path.
  * Returns false if Sta isn't ready.
  * Returns false if no path points were specified.
